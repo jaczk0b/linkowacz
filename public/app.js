@@ -111,9 +111,10 @@ function toast(msg) {
 // ---------- render ----------
 function render() {
   if (!S.db) return;
-  $('#profiles').innerHTML = S.db.profiles.map((p) =>
-    `<button class="prof ${p.id === S.me ? 'on' : ''}" data-act="me" data-id="${p.id}" style="--c:${esc(p.color)}" title="Jestem: ${esc(p.name)}">
-      <span class="av">${esc(p.name[0] || '?')}</span><span class="nm">${esc(p.name)}</span></button>`).join('');
+  const me = prof(S.me);
+  $('#profiles').innerHTML = `<button class="prof" data-act="switch" style="--c:${esc(me.color)}" title="Zmień profil">
+      <span class="av">${esc(me.name[0] || '?')}</span><span class="nm">${esc(me.name)}</span><span class="caret">▾</span></button>`;
+  if (!$('#picker').hidden) renderPicker();
   document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === S.tab));
   $('#view').innerHTML = S.tab === 'insp' ? viewInsp() : S.tab === 'design' ? viewDesign() : viewRooms();
 }
@@ -463,6 +464,47 @@ function settingsModal() {
   });
 }
 
+// ---------- ekran wyboru profilu ----------
+function renderPicker() {
+  const added = (id) => S.db.links.filter((l) => l.author === id).length + S.db.inspirations.filter((i) => i.author === id).length;
+  $('#picker').innerHTML = `
+    <div class="pk-logo"><img src="/icon.svg" alt="">NewPlace</div>
+    <div class="pk-inner">
+      <h1>Kto dziś urządza?</h1>
+      <div class="pk-list">
+        ${S.db.profiles.map((p) => {
+          const n = added(p.id);
+          return `<button class="pk-prof" data-act="pick" data-id="${p.id}" style="--c:${esc(p.color)}">
+            <span class="pk-tile">${esc(p.name[0] || '?')}</span>
+            <span class="pk-name">${esc(p.name)}</span>
+            <span class="pk-stat">${n ? `${n} ${n === 1 ? 'zapisana rzecz' : 'zapisanych rzeczy'}` : 'jeszcze nic nie dodano'}</span>
+          </button>`;
+        }).join('')}
+      </div>
+      <button class="pk-manage" data-act="settings">Zarządzaj profilami</button>
+    </div>`;
+}
+function showPicker() {
+  const el = $('#picker');
+  el.classList.remove('out');
+  el.hidden = false;
+  renderPicker();
+  setTimeout(() => el.querySelector(`[data-id="${S.me}"]`)?.focus(), 50);
+}
+function pick(id) {
+  S.me = id;
+  store.set('me', id);
+  try { sessionStorage.setItem('picked', '1'); } catch {}
+  const el = $('#picker');
+  el.classList.add('out');
+  setTimeout(() => { el.hidden = true; el.classList.remove('out'); }, 350);
+  render();
+  toast(`Cześć, ${prof(id).name}!`);
+}
+function wasPicked() {
+  try { return sessionStorage.getItem('picked') === '1'; } catch { return false; }
+}
+
 // ---------- events ----------
 document.addEventListener('click', async (e) => {
   const tabBtn = e.target.closest('[data-tab]');
@@ -475,7 +517,8 @@ document.addEventListener('click', async (e) => {
   const key = el.closest('.de')?.dataset.key;
   try {
     switch (act) {
-      case 'me': S.me = id; store.set('me', id); render(); toast(`Teraz jesteś: ${prof(id).name}`); break;
+      case 'switch': showPicker(); break;
+      case 'pick': pick(id); break;
       case 'settings': settingsModal(); break;
       case 'close': closeModal(); break;
       case 'cat': S.cat = id; store.set('cat', id); S.status = 'all'; render(); break;
@@ -551,6 +594,7 @@ document.addEventListener('change', async (e) => {
 
 document.addEventListener('keydown', async (e) => {
   if (e.key === 'Escape' && !$('#modal').hidden) return closeModal();
+  if (e.key === 'Escape' && !$('#picker').hidden && wasPicked()) return pick(S.me);
   const el = e.target;
   if (e.key === 'Enter' && el.dataset.input === 'style-add' && el.value.trim()) {
     e.preventDefault();
@@ -603,4 +647,4 @@ document.addEventListener('paste', (e) => {
 // odśwież, gdy druga osoba mogła coś dodać
 window.addEventListener('focus', () => { if ($('#modal').hidden) load().catch(() => {}); });
 
-load().catch((err) => { $('#view').innerHTML = `<div class="empty-state"><b>Nie mogę połączyć się z serwerem</b>${esc(err.message)}</div>`; });
+load().then(() => { if (!wasPicked()) showPicker(); }).catch((err) => { $('#view').innerHTML = `<div class="empty-state"><b>Nie mogę połączyć się z serwerem</b>${esc(err.message)}</div>`; });
